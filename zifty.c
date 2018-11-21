@@ -28,10 +28,19 @@ struct loop_object_s {
 	long lo_change;
 	long lo_current;
 	long lo_start;
-	long lo_end;
-	long lo_op;
 
-};
+	union {
+		struct {
+			long r_rip;
+			long r_flags;
+		} f_rip;
+
+		struct {
+			long l_end;
+			long l_break;
+		} f_loop;
+	} lo_footer;
+} __attribute__ ((packed));
 
 #define LO_LENGTH	(sizeof(struct loop_object_s)/sizeof(long))
 #define LO_OBJECT(obj)	((struct loop_object_s *) (obj));
@@ -49,7 +58,20 @@ struct loop_object_s {
 struct rip_object_s {
 	long ro_rip;
 	long ro_flags;
-};
+} __attribute__ ((packed));
+/*
+ * f = (f << 0) | op0sz, f = (f << 4) | op0
+ * f = (f << 8) | op1sz, f = (f << 12) | op1
+ * f = (f << 16) | ar, f = (f << 20) | type
+ *
+ *  1111   1111   1111   1111   1111   1111
+ * op0sz    op0  op1sz    op1     ar   type
+ */
+#define ROFL_GETOPSZ(ro,op)	(((ro)->ro_flags >> (12 + ((((op) + 1) % 2) * 8))) & 0xf)
+#define ROFL_GETOP(ro,op)	(((ro)->ro_flags >> ( 8 + ((((op) + 1) % 2) * 8))) & 0xf)
+#define ROFL_GETAR(ro)		(((ro)->ro_flags >> 4) & 0xf)
+#define ROFL_GETTYP(ro)		((ro)->ro_flags & 0xf)
+
 #define RO_LENGTH	(sizeof(struct rip_object_s)/sizeof(long))
 #define RO_OBJECT(obj)	((struct rip_object_s *) (obj));
 #define LO_SIZE		((LO_LENGTH) - (RO_LENGTH))
@@ -115,19 +137,29 @@ struct machinestate_s {
 #define MSRG_GETOPI(st, i)	(MSRG_GETOP(st,i) - &(MSRG_GET(st,0)))
 #define MSIP_PEEK(st, i)	((i) < (st)->ms_code_size ? (st)->ms_code[i] : -1)
 #define LINE_CHANGE(l, c)	do { l += 1; c = 0; } while(0)
-#define MSRIP_CHECK(st, size)	((st)->ms_rip-(size) < (st)->ms_segment.s_stack_end)
+#define MSRIP_CHECK(st, size)	((long *) ((st)->ms_rip-(size)) < ((long *) (st)->ms_segment.s_stack_end))
 #define MSRIP_OKTOPUSH(st,size) (!((st)->ms_rip+(size) > (st)->ms_segment.s_stack_start))
 #define MSRIP_SIZE		2
 #define MSRIP_POP(st, size)	((st)->ms_rip -= (size))
 #define MSRIP_PUSH(st, size)	((st)->ms_rip += (size))
 #define MSRIP_OPUSH(st, obj)	((st)->ms_rip += sizeof(*(obj))/sizeof(long))
 
+struct tracestack_object_s {
+	long to_size;
+	void *to_obj;
+}; // __attribute__ ((packed));
+
 enum {
 	RTYP_FUNCTION = 0,
 	RTYP_FORLOOP,
+
+	TS_ADD,
+	TS_SHOW,
+	TS_CLEANUP,
 };
 
 static int input_base = 16;	// eww.
+static int gdebug = 0;
 
 long nextop(struct machinestate_s *state, int expect, ...);
 #define vmop(state, exp, ...) nextop((state), (exp), __VA_ARGS__, NULL)
@@ -164,7 +196,7 @@ void translate_byte(struct machinestate_s *state, long ip, long *line, long *chr
 	}
 }
 
-int hex2int(int x)
+inline int hex2int(int x)
 {
 	return ((10*(x/65)+((x+1)%49))%17);
 }
@@ -882,9 +914,15 @@ long load_array(struct machinestate_s *state, long size)
 	return 0;
 }
 
+inline int isdebughash(char *code, long ip)
+{
+	return (code[ip+1] == '%' && strchr("agprvqsm0123456789ABCDEF", code[ip+2]));
+}
+
+
 long find_matching(struct machinestate_s *state, int dir, int skip, int needle)
 {
-	register long count = 1, ip, size;
+	register long count = 1, ip, size, tmp;
 	register char *code = state->ms_code;
 
 	ip = state->ms_ip;
@@ -894,6 +932,28 @@ long find_matching(struct machinestate_s *state, int dir, int skip, int needle)
 			for(ip += dir; ip >= 0 && ip < size; ip += dir) {
 				if(code[ip] == '"' && code[ip+dir] != '\\')
 					break;
+			}
+		}
+		else if(code[ip] == '#' && dir > 0) {
+			if((ip+2) < size && isdebughash(code,ip))
+				continue;
+			else {
+				for(ip += dir; ip < size; ip += dir) {
+					if(code[ip] == '\n')
+						break;
+				}
+			}
+		}
+		else if(code[ip] == '\n' && dir < 0) {
+			for(tmp = ip+dir; tmp >= 0; tmp -= dir) {
+				if(code[tmp] == '#') {
+					if(tmp+2 < size && isdebughash(code,tmp))
+						continue;
+					else {
+						ip = tmp;
+						break;
+					}
+				}
 			}
 		}
 		else if(code[ip] == needle)
@@ -989,20 +1049,151 @@ char *to_binary(long n, int length, char *rslt)
 	return buf;
 }
 
+void dumpro(struct rip_object_s *ro)
+{
+	switch(ROFL_GETTYP(ro)) {
+		case RTYP_FUNCTION:
+			printf("      type: RTYP_FUNCTION\n");
+			break;
+
+		case RTYP_FORLOOP:
+			printf("      type: RTYP_FORLOOP\n");
+			break;
+
+		default:
+			printf("      type: UNKNOWN\n");
+	}
+	printf("       rip: 0x%04lx\n", ro->ro_rip);
+	printf("     flags: %s (%06lx)\n", to_binary(ro->ro_flags, 24, NULL), ro->ro_flags);
+      /*printf("        ar: %ld\n", (ro->ro_flags >> 4) & 0xf);
+	printf("       op1: %ld\n", (ro->ro_flags >> 8) & 0xf);
+	printf("     op1sz: %ld\n", (ro->ro_flags >>12) & 0xf);
+	printf("       op0: %ld\n", (ro->ro_flags >>16) & 0xf);
+	printf("     op0sz: %ld\n", (ro->ro_flags >>20) & 0xf);*/
+	printf("     op0sz: %ld\n", ROFL_GETOPSZ(ro,0));
+	printf("       op0: %ld\n", ROFL_GETOP(ro,0));
+	printf("     op1sz: %ld\n", ROFL_GETOPSZ(ro,1));
+	printf("       op1: %ld\n", ROFL_GETOP(ro,1));
+	printf("        ar: %ld\n", ROFL_GETAR(ro));
+}
+
 void dumplo(struct loop_object_s *lo)
 {
 	register long op;
 
-	op = LOFL_GETOP(lo->lo_op);
+	op = LOFL_GETOP(lo->lo_footer.f_loop.l_break);
 
+	printf("      type: RTYP_FORLOOP\n");
 	printf("start addr: 0x%04lx\n", lo->lo_start_addr);
 	printf("  end addr: 0x%04lx\n", lo->lo_end_addr);
 	printf("     start: %ld\n", lo->lo_start);
 	printf("   current: %ld\n", lo->lo_current);
 	printf("    change: %ld\n", lo->lo_change);
-	printf("       end: %ld\n", lo->lo_end);
-	printf("     flags: %s\n", to_binary(lo->lo_op, 20, NULL));
+	printf("       end: %ld\n", lo->lo_footer.f_loop.l_end);
+	printf("     flags: %s\n", to_binary(lo->lo_footer.f_loop.l_end, 20, NULL));
 	printf("        op: %c%c\n", (int) (isprint(op) ? op : op ^ '='), isprint(op) ? ' ' : '=');
+}
+
+#define stack_trace(obj, size)	(trace_stack((obj), (size), TS_ADD))
+#define debug_stack		(trace_stack(NULL, 0, TS_SHOW))
+void trace_stack(void *obj, long size, int opt)
+{
+	static char *buf = NULL, *ptr = NULL;
+	static int bufsize = 4096;
+	struct tracestack_object_s *to = NULL;
+	register long index, max;
+
+	switch(opt) {
+		case TS_SHOW:
+		{
+			register long i, max;
+			register char *tmp;
+
+			if(!buf) {
+				printf("No trace available.\n");
+				break;
+			}
+
+
+			to = (struct tracestack_object_s *) buf;
+			max = to->to_size;
+			to = to->to_obj;
+			index = 0;
+
+			printf("Found %ld transactions.\n", max);
+			for(i = 0; i < max; ++i) {
+				if(to->to_size == sizeof(struct rip_object_s))
+					dumpro((struct rip_object_s *) to->to_obj);
+				else if(to->to_size == sizeof(struct loop_object_s))
+					dumplo((struct loop_object_s *) to->to_obj);
+				else
+					warnx("Transactin %ld has invalid size %ld\n", i, to->to_size);
+
+				tmp = (char *) to + sizeof(*to) + to->to_size;
+				to  = (struct tracestack_object_s *) tmp;
+			}
+		}
+		break;
+
+		case TS_CLEANUP:
+			if(buf) {
+				free(buf);
+
+				buf = NULL;
+				ptr = NULL;
+				bufsize = 4096;
+			}
+			break;
+
+
+		case TS_ADD:
+			if(!buf) {
+				buf = calloc(size, sizeof(char));
+				if(!buf) {
+					warn("could not trace stack. calloc(3)");
+					break;
+				}
+
+				to = (struct tracestack_object_s *) buf;
+				ptr = (char *) buf + sizeof(*to);
+				to->to_size = 0;
+				to->to_obj = ptr;
+			} else
+				to = (struct tracestack_object_s *) buf;
+
+			index = (ptr - (char *) to->to_obj);
+			if(index+size > bufsize) {
+				register char *tmp;
+		
+				bufsize += 4096;
+				tmp = realloc(buf, bufsize);
+				if(!tmp) {
+					warn("could not trace stack. realloc(3)");
+					bufsize -= 4096;
+					break;
+				}
+		
+				if(buf != tmp) {
+					to = (struct tracestack_object_s *) buf;
+					to->to_obj = (void *) buf + sizeof(*to);
+					ptr = (char *) to->to_obj + index;
+				}
+			}
+
+			++to->to_size;
+			max = to->to_size;
+			to = (struct tracestack_object_s *) to->to_obj;
+
+			for(index = 0; index < max; ++index)
+				to = (struct tracestack_object_s *) ((char *) to->to_obj + to->to_size + sizeof(*to));
+			to = (struct tracestack_object_s *) ptr;
+			to->to_size = size;
+			to->to_obj = (struct tracestack_object_s *) ((char *) to + sizeof(*to));
+			ptr += sizeof(*to);
+			memcpy(ptr, obj, size);
+			ptr += size;
+			break;
+	}
 }
 
 int push_rip(struct machinestate_s *state, long ip, long type)
@@ -1027,14 +1218,17 @@ int push_rip(struct machinestate_s *state, long ip, long type)
 			ro = RO_OBJECT(state->ms_rip);
 
 			ro->ro_rip = ip;
-			ro->ro_flags = (ro->ro_flags << 0) | MSRG_GETOPI(state,0);
+			ro->ro_flags = MSRG_GETOPI(state,0);
 			ro->ro_flags = (ro->ro_flags << 4) | MSRG_GETOPSZ(state, 0);
 			ro->ro_flags = (ro->ro_flags << 4) | MSRG_GETOPI(state,1);
 			ro->ro_flags = (ro->ro_flags << 4) | MSRG_GETOPSZ(state,1);
 			ro->ro_flags = (ro->ro_flags << 4) | MSRG_GETCUR(state);
 			ro->ro_flags = (ro->ro_flags << 4) | type;
 
+			//dumpro(ro);
+
 			MSRIP_OPUSH(state, ro);
+			if(gdebug) stack_trace(ro, sizeof(*ro));
 			break;
 
 		case RTYP_FORLOOP:
@@ -1044,9 +1238,10 @@ int push_rip(struct machinestate_s *state, long ip, long type)
 			}
 
 			loopobj = LO_OBJECT((unsigned long) ip);
-			loopobj->lo_op = (loopobj->lo_op << 4) | type;
+			loopobj->lo_footer.f_loop.l_break = (loopobj->lo_footer.f_loop.l_break << 4) | type;
 			memcpy(state->ms_rip, loopobj, sizeof(*loopobj));
 			MSRIP_OPUSH(state, loopobj);
+			if(gdebug) stack_trace(loopobj, sizeof(*loopobj));
 			break;
 	}
 	return 0;
@@ -1084,8 +1279,9 @@ long pop_rip(struct machinestate_s *state)
 			flags >>= 4;
 			MSRG_GETOP(state,0) = &(MSRG_GET(state, (flags & 0xf)));
 
-			--state->ms_rip;
-			rip = *state->ms_rip;
+			//dumpro(ro);
+
+			rip = ro->ro_rip;
 			break;
 
 		case RTYP_FORLOOP:
@@ -1102,10 +1298,10 @@ long pop_rip(struct machinestate_s *state)
 			op1 = MSRG_GETOP(state,1);
 			*ar = loopobj->lo_current;
 			*op1 = loopobj->lo_change;
-			end = &loopobj->lo_end;
+			end = &loopobj->lo_footer.f_loop.l_end;
 
-			/*if(LOFL_GETREG(loopobj->lo_op))
-				*end = MSRG_GET(state, LOFL_GETREG(loopobj->lo_op)-1);*/
+			/*if(LOFL_GETREG(loopobj->lo_footer.f_loop.l_break))
+				*end = MSRG_GET(state, LOFL_GETREG(loopobj->lo_footer.f_loop.l_break)-1);*/
 
 			*(MSRG_GETOP(state,0)) = loopobj->lo_start;
 
@@ -1118,7 +1314,7 @@ long pop_rip(struct machinestate_s *state)
 				   } else rip = loopobj->lo_end_addr; \
 				   break;
 
-			switch(LOFL_GETOP(loopobj->lo_op)) {
+			switch(LOFL_GETOP(loopobj->lo_footer.f_loop.l_break)) {
 				loophlpr('<', <, +=);
 				loophlpr('>', >, -=);
 				loophlpr('=', ==, +=);
@@ -1170,9 +1366,10 @@ long call_function(struct machinestate_s *state)
 
 	for(fmp = state->ms_segment.s_funcmap; fmp < state->ms_segment.s_funcmap_start; ++fmp) {
 		if(fmp->fm_fn == *ar) {
-			if(!push_rip(state, state->ms_ip, RTYP_FUNCTION)) 
+			if(!push_rip(state, state->ms_ip, RTYP_FUNCTION)) {
 				state->ms_ip = fmp->fm_addr;
-			else {
+				return 0;
+			} else {
 				warnx("Could not push RIP. Out of stack space.");
 				warnx("Not calling function %ld (%lx) at ip %lx",
 					*ar, *ar, state->ms_ip);
@@ -1180,7 +1377,21 @@ long call_function(struct machinestate_s *state)
 		}
 	}
 
+	warnx("Function %ld doesn't exist.", *(MSRG_GETAR(state)));
 	return 0;
+}
+
+struct function_map_s *find_function(struct machinestate_s *state, long fn)
+{
+	register struct function_map_s *fmp = NULL;
+
+	for(fmp = state->ms_segment.s_funcmap; fmp < state->ms_segment.s_funcmap_start; ++fmp) {
+		if(fmp->fm_fn == fn) {
+			return fmp;
+		}
+	}
+
+	return NULL;
 }
 
 int runvm(struct machinestate_s *state)
@@ -1521,6 +1732,9 @@ int runvm(struct machinestate_s *state)
 				break;
 
 			case '{':
+			{
+				register struct function_map_s *fmp;
+
 				*ip += 1;
 				tmp = find_matching(state,1,'{','}');
 				if(!tmp) {
@@ -1534,14 +1748,17 @@ int runvm(struct machinestate_s *state)
 					break;
 				}
 
-				if(state->ms_segment.s_funcmap > state->ms_segment.s_funcmap_end) {
+				fmp = find_function(state, *ar);
+				if(fmp) fmp->fm_addr = *ip-1;
+				else if(state->ms_segment.s_funcmap > state->ms_segment.s_funcmap_end) {
 					--state->ms_segment.s_funcmap;
 					state->ms_segment.s_funcmap->fm_fn = *(MSRG_GETAR(state));
 					state->ms_segment.s_funcmap->fm_addr = *ip-1;
 				}
 
 				*ip = tmp-1;
-				break;
+			}
+			break;
 
 			case '}':
 				tmp = pop_rip(state);
@@ -1690,8 +1907,8 @@ int runvm(struct machinestate_s *state)
 						loopobj.lo_change = *(MSRG_GETOP(state,1));
 						loopobj.lo_current = *ar;
 						loopobj.lo_start = *(MSRG_GETOP(state,0));
-						loopobj.lo_end = arg[1];
-						loopobj.lo_op = (arg[0] << 8) | (isptr + 1);
+						loopobj.lo_footer.f_loop.l_end = arg[1];
+						loopobj.lo_footer.f_loop.l_break = (arg[0] << 8) | (isptr + 1);
 
 						push_rip(state, (long) (unsigned long) &loopobj, RTYP_FORLOOP);
 						tmp = pop_rip(state);
@@ -1750,6 +1967,7 @@ int main(int argc, char *argv[])
 
 	rc = runvm(&state);
 
+	trace_stack(NULL,0,TS_CLEANUP);
 	munmap(state.ms_code, state.ms_code_size);
 	close(fd);
 

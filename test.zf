@@ -1,0 +1,57 @@
+0~~1
+
+# Print ABCBA
+40::1:;+.::+.::+.::-.::-.a.
+
+# similar to above, but uses ~ to set op0 and op1 registers.
+~0f1:;40+.+.+.-.-.a.
+
+# same as above, use multiplication and division instead.
+~0f5:;d*:15/:;;1.+.+.-.-.a.
+
+# Same as above, use memory instead.
+41:$+:$+:$-:$-:$a:$0:m;$.;$.;$.;$.;$.;$.
+
+# Same as above, using memory, but loop instead.
+0:m;$?(?.;$)?
+
+# Same as above (sort of), use inverse match instead, also prints trailing \0.
+0:m?(!;$.)?
+
+# Same as above, use stack.
+0^a^41^+^+^-^-^0?(!v.)?
+
+# Same as above, use Memory string.
+32:m"ABCBA\n"32:m?(?;$.)?
+
+# Use hex string
+64:m"\x41\x42\x43\x42\x41\x0a"64:m?(?;$.)?
+
+# Prints the string "Mix it up !!!\n", using result in op0
+~ef128:m"Mix it up !!!\x0a";::m;$?(?.;$)?
+
+# Interactive input.
+"What is your name? ";;:7;::m;$?(?.;$)?;7:m0?(!a::_;,_0=?(?;;:$);)?0:$
+"Hello, ";::m;$?(?.;$)?;7:m;$?(?.;$)?
+". I have no name. Will you give me one?\n";::m;$?(?.;$)?
+
+# Where would a script be without one of these?
+"Hello, World!\n";::m;$?(?.;$)?
+
+# Use function 1 to print message.
+~2f_3"This message printed using core function 1. (write)\n"_11_01@
+
+# Another interactive input, using read()
+_3"I still need a name, would you please give me one.\nEnter A Name > "_11_01@
+~~8~ef_340_2;;:7:[my name]_10_02@:8~0f+q0f~f01-:m~~10:$~2f_3"OK, My name is "_11_01@q83q72_11_01@
+_3" now. I will try to remember that, I have already forgotten your name.\n"_11_01@
+
+# Continued interaction.
+_3"Can you please tell me your name again? "_11_01@
+0~~8~efS[your name]_340_2;[your name]_10_02@q0f;[your name]q0e+q0e1:f-:m0~~1:$
+~~8~2f_3"Hello, "_11_01@~ef_:;[your name]_33@_2;[your name]_11_01@
+~2f_3". My name is "_11_01@~ef_:;[my name]_33@_2;[my name]_11_01@
+~2f_3". Please to meet you.\n"_11_01@
+
+# Exit 42.
+2a::0@
