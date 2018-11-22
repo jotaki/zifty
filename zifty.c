@@ -1693,14 +1693,14 @@ int runvm(struct machinestate_s *state, int argc, char *argv[])
 
 				out = *ip;
 				while(brk > 0) {
-					out = lookfor(state, out, 1, -1, ')');
+					out = lookfor(state, out, 1, '(', ')');
 					if(out < 0) {
 						warnx("Could not find ')', is this a loop?");
 						break;
 					}
 
 					while(MSIP_PEEK(state, out) == '(') {
-						out = lookfor(state, out, 1, -1, ')');
+						out = lookfor(state, out, 1, '(', ')');
 						if(out < 0) {
 							warnx("Could not find ')', is this a loop?");
 							break;
@@ -1716,6 +1716,45 @@ int runvm(struct machinestate_s *state, int argc, char *argv[])
 
 				if(brk == 0)
 					*ip = out;
+			}
+			break;
+
+			case 'J':
+			{
+				register long jmp;
+
+				jmp = lookfor(state, *ip, 1, '(', ')');
+				if(jmp < 0) {
+					warnx("J: Could not find ')', is this a block?");
+					break;
+				}
+
+				if(MSIP_PEEK(state, jmp) != '(') {
+					jmp = lookfor(state, *ip, -1, ')', '(');
+					if(jmp <= 0) {
+						warnx("J: Could not find '(', is this a block?");
+						break;
+					}
+
+					jmp = lookfor(state, jmp-1, -1, ')', '(');
+					if(jmp < 0) {
+						warnx("J: Could not find '(', is this a block?");
+						break;
+					}
+
+					if(MSIP_PEEK(state, jmp) != '?') {
+						warnx("J: Could not find '?', is this a block?");
+						break;
+					}
+					else if((jmp+3) > state->ms_code_size) {
+						warnx("J: Insufficient code size for jump.");
+						break;
+					}
+
+					jmp += 3;
+				}
+				*ip = jmp;
+
 			}
 			break;
 
