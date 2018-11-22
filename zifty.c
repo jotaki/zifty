@@ -1721,8 +1721,11 @@ int runvm(struct machinestate_s *state)
 								break;
 							}
 
-							if(read(STDIN_FILENO, &state->ms_memory[*op0], *ar) < 0)
+							*ar = read(STDIN_FILENO, &state->ms_memory[*op0], *ar);
+							if(*ar < 0) {
 								warn("read(2) failed");
+								*ar = 0;
+							}
 						}
 						break;
 
