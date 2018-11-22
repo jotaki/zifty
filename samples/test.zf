@@ -1,3 +1,5 @@
+#! /usr/bin/env zifty
+
 0~~1
 
 # Print ABCBA

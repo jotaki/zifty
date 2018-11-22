@@ -14,13 +14,7 @@
 #include <err.h>
 #include <locale.h>
 
-#define pdebug(st, ip)	do { \
-				long ln, chr; \
-				translate_byte((st), (ip), &ln, &chr); \
-				printf(" -> '%c' (0x%02x) line: %ld, character: %ld (0x%08lX)\n", \
-					isprint((st)->ms_code[(ip)]) ? (st)->ms_code[(ip)] : '.', \
-					(st)->ms_code[(ip)], ln, chr, ip); \
-			} while(0);
+#define safe_print(ch)		(isprint((ch)) ? (int) (ch) : '.')
 
 struct loop_object_s {
 	long lo_start_addr;
@@ -185,15 +179,29 @@ void translate_byte(struct machinestate_s *state, long ip, long *line, long *chr
 {
 	register long i;
 
-	*line = 0;
-	*chr = 1;
+	*line = 1;
+	*chr = 0;
 
 	for(i = 0; i <= ip; ++i, ++(*chr)) {
 		if(state->ms_code[i] == '\n') {
-			*chr = 1;
-			++(*line);
+			if(i != ip) {
+				*chr = 0;
+				*line += 1;
+			}
 		}
 	}
+
+	if(*chr > 1)
+		*chr -= 1;
+}
+
+void pdebug(struct machinestate_s *state, long ip)
+{
+	long ln, chr;
+	translate_byte(state, ip, &ln, &chr);
+	printf(" -> '%c' (0x%02x) line: %ld, character: %ld (0x%08lX) (%ld)\n",
+		isprint((state)->ms_code[(ip)]) ? (state)->ms_code[(ip)] : '.',
+		(state)->ms_code[(ip)], ln, chr, ip, ip);
 }
 
 inline int hex2int(int x)
@@ -944,8 +952,8 @@ long find_matching(struct machinestate_s *state, int dir, int skip, int needle)
 				}
 			}
 		}
-		else if(code[ip] == '\n' && dir < 0) {
-			for(tmp = ip+dir; tmp >= 0; tmp -= dir) {
+		/*else if(code[ip] == '\n' && dir < 0) {
+			for(tmp = ip+dir; tmp >= 0; tmp += dir) {
 				if(code[tmp] == '#') {
 					if(tmp+2 < size && isdebughash(code,tmp))
 						continue;
@@ -955,7 +963,7 @@ long find_matching(struct machinestate_s *state, int dir, int skip, int needle)
 					}
 				}
 			}
-		}
+		}*/
 		else if(code[ip] == needle)
 			--count;
 		else if(code[ip] == skip)
@@ -1512,6 +1520,9 @@ int runvm(struct machinestate_s *state)
 			break;
 
 			case '?':
+			{
+				register long *op0, *op1, jmpaddr;
+
 				if(!vmop(state, 2, &arg[0], &arg[1])) {
 					err_need_args('?', *ip);
 					break;
@@ -1528,33 +1539,80 @@ int runvm(struct machinestate_s *state)
 					break;
 				}
 
-				if(arg[1] == '!' || arg[1] == '?') {
-					if(arg[1] == '!' && *ar) *ip = tmp-3;
-					else if(arg[1] == '?' && !*ar) *ip = tmp-3;
-				} else err_unexpected_character('?', arg[1], *ip);
-				break;
+				// encountered else
+				if(code[tmp-1] == '(') jmpaddr = tmp-1;
+				else jmpaddr = tmp-3;
+
+				op0 = MSRG_GETOP(state,0);
+				op1 = MSRG_GETOP(state,1);
+
+#define cmphelper(ch, cmp) 	case ch: \
+					if(!(cmp)) *ip = jmpaddr; \
+					break;
+
+				switch(arg[1]) {
+					cmphelper('!', !*ar);
+					cmphelper('?', *ar);
+					cmphelper('<', *op0 < *op1);
+					cmphelper('>', *op0 > *op1);
+					cmphelper('=', *op0 == *op1);
+					cmphelper('/', *op0 != *op1);
+					cmphelper(']', *op0 >= *op1);
+					cmphelper('[', *op0 <= *op1);
+
+					default:
+						warnx("Unexpected character '%c'", safe_print(arg[1]));
+				}
+#undef cmphelper
+			}
+			break;
 
 			case ')':
+			{
+				register long *op0, *op1;
+
 				if(!vmop(state, 1, &arg[0])) {
 					err_need_args(')', *ip);
 					break;
 				}
 
-				if(arg[0] == ';') break;
-				else if(arg[0] == '?' || arg[0] == '!') {
-					*ip -= 2;
-					tmp = find_matching(state, -1, ')', '(');
-					*ip += 2;
+				if(arg[0] == ';')
+					break;	/* we're done here. */
 
-					if(!tmp) {
-						err_need_args(')', *ip);
+				*ip -= 2;
+				tmp  = find_matching(state, -1, ')', '(');
+				*ip += 2;
+
+				if(!tmp) {
+					warnx("Error: mismatched ')'");
+					break;
+				}
+
+				op0 = MSRG_GETOP(state,0);
+				op1 = MSRG_GETOP(state,1);
+
+				switch(arg[0]) {
+					case '?': if(*ar) *ip = tmp+3; break;
+					case '!': if(!*ar) *ip = tmp+3; break;
+					case '<': if(*op0 < *op1) *ip = tmp+3; break;
+					case '>': if(*op0 > *op1) *ip = tmp+3; break;
+					case '=': if(*op0 == *op1) *ip = tmp+3; break;
+					case '/': if(*op0 != *op1) *ip = tmp+3; break;
+					case ']': if(*op0 > *op1) *ip = tmp+3; break;
+					case '[': if(*op0 < *op1) *ip = tmp+3; break;
+					case '(': 
+						*ip += 2;
+						arg[1] = find_matching(state, 1, '(', ')');
+						if(!arg[1]) {
+							warnx("Error: mismatched ')('");
+							*ip -= 2;
+							break;
+						}
+						*ip = arg[1];
 						break;
-					}
-
-					if(arg[0] == '?' && *ar) *ip = tmp+3;
-					else if(arg[0] == '!' && !*ar) *ip = tmp+3;
-				} else err_unexpected_character(')', arg[0], *ip);
-				break;
+				}
+			}
+			break;
 
 			case '_':
 				if(!vmop(state, 1, &tmp)) {
@@ -1721,6 +1779,75 @@ int runvm(struct machinestate_s *state)
 				*ar = 0;
 				if(read(STDIN_FILENO, ar, state->ms_reg.r_opsz[0]) <= 0)
 					warn("read(2)");
+				break;
+
+			case '\'':
+				if(!vmop(state, 2, &arg[0], &arg[1])) {
+					warnx("Expected arguments to '\''.");
+					break;
+				}
+
+				if(arg[0] == '\\') {
+					arg[0] = arg[1];
+					if(!vmop(state, 1, &arg[1])) {
+						warnx("Expected arguments to '\''.");
+						break;
+					}
+
+					switch(arg[0]) {
+						case  'n': tmp = '\n'; break;
+						case  'r': tmp = '\r'; break;
+						case '\\': tmp = '\\'; break;
+						case '\'': tmp = '\''; break;
+						case  'x':
+							   tmp = 0;
+							   while(isxdigit(arg[1])) {
+								   tmp = (tmp * 16) + hex2int(arg[1]);
+								   if(!vmop(state,1,&arg[1])) {
+									warnx("Expected arguments to '\''.");
+									break;
+								   }
+							   }
+							   break;
+
+						default:
+							   warnx("Unknown escape character: '%c'", (int) arg[0]);
+					}
+				} else
+					tmp = arg[0];
+
+				if(arg[1] != '\'') {
+					warnx("Error: expected character '\'', but got '%c' instead.", (int) arg[1]);
+					break;
+				}
+				*ar = tmp;
+				break;
+
+			case '`':
+				tmp = *ip+1;
+				arg[0] = 0;
+				while(arg[0] != '`') {
+					if(!vmop(state,1,&arg[0])) {
+						warnx("Error: missing closing '`'.");
+						break;
+					}
+
+					if(arg[0] == '\\' && MSIP_PEEK(state,*ip+1) == '`')
+						*ip += 2;
+				}
+
+				// sanity check.
+				if(arg[0] != '`')
+					break;
+
+				arg[1] = *ip - tmp;	// string length
+				if(arg[1] > (signed) sizeof(*ar)) {
+					warnx("Error: String is too long to load into %lu bytes", sizeof(*ar));
+					break;
+				}
+
+				*ar = 0;
+				memcpy(ar, code+tmp, arg[1]);
 				break;
 
 			case '@':
@@ -1918,7 +2045,6 @@ int runvm(struct machinestate_s *state)
 				}
 				break;
 		}
-
 		(*ip)++;
 	}
 

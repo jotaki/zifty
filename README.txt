@@ -111,6 +111,12 @@ default function map size is 16KB
   ?(?code)! - if(ar) { foo: code if(!ar) goto foo; }
   ?(!code)? - if(!ar) { foo: code if(ar) goto foo; }
   ?(!code)! - if(!ar) { foo: code if(!ar) goto foo; }
+  ?(<code)< - conditional, if(op0 < op1)
+  ?(>code)> - conditional, if(op0 > op1)
+  ?(=code)= - conditional, if(op0 == op1)
+  ?(/code)/ - conditional, if(op0 != op1)
+  ?(]code)] - conditional, if(op0 >= op1)
+  ?([code)[ - conditional, if(op0 <= op1)
 
     ^       - pushes value of ar onto stack segment
     v       - pops value on stack segment into ar
@@ -131,6 +137,13 @@ default function map size is 16KB
     @       - call function in ar.
 
   {code}    - declares {code} as a function, the function number is in ar.
+
+  '<char>'  - writes byte value of <char> to ar.
+            - Escape characters supported are: '\r', '\n', '\\', '\'', and '\xHEX'
+
+  `string`  - write value 'string' into ar.
+            - Note 1: this operation ignores operation sizes.
+	    - Note 2: the string is limited to sizeof(long) bytes. (8 on x86_64 platforms.)
 
     !!bb    - use base bb as input base. Note: this only changes the multiplier to bb.
               Hex input will still be available. This does not effect

@@ -1,0 +1,16 @@
+#! /usr/bin/env zifty
+
+# loads string into memory.
+"Hello, World!\n"
+
+# copy length to register 3
+:3
+
+# copy memory location to register 2
+q:2
+
+# copy immediate value 1 to register 1. (stdout)
+1:1
+
+# use function 1 to write message.
+1 @
