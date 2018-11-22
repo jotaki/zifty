@@ -1,0 +1,65 @@
+#! /usr/bin/env zifty
+
+!!0a
+
+S[name buf] 128 $>
+S[occupation] 128 $>
+S[age] 8 $>
+
+`getstr` {
+  q1:
+  128 ~~,
+  q_:
+  0:;
+  ?(> ;1 )( -1 );
+}
+
+`print` {
+  q1:
+  $$
+  q1:
+
+  ~~.
+}
+
+`chomp` {
+  ;m ^
+  q1m
+
+  0 ~~1
+  ?(!
+    ;$ ::
+    '\n' :;
+    ?(=
+      1 $<
+      0 :$
+    )
+  )?
+
+  0 ~~8
+  v :m
+  ;1
+}
+
+"Please enter your name: " ~~.
+_1 ;[name buf] _0 `getstr` @
+_1 ;[name buf] _0 `chomp` @
+
+"Please enter your occupation: " ~~.
+_1 ;[occupation] _0 `getstr` @
+_1 ;[occupation] _0 `chomp` @
+
+"Please enter your age: " ~~.
+~, :[age]
+
+"Hello, " ~~.
+_1 ;[name buf] _0 `print` @
+
+". It would appear your occupation is " ~~.
+_1 ;[occupation] _0 `print` @
+
+", And you are currently " ~~. ;[age] ~. " years old.\n" ~~.
+
+"We currently do not have any positions availabe in the " ~~.
+_1 ;[occupation] _0 `print` @
+" department. You should check back in a few months.\n" ~~.
