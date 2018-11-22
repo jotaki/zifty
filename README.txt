@@ -111,7 +111,7 @@ default function map size is 16KB
     =       - Compare value of op0, and op1 via xor.
             - ar will be 0 if op0 and op1 match.
             - ar will be non-zero if op0 and op1 dont match.
-	    --- Operations are performed as *ar = *op0 <op> *op1;
+        --- Operations are performed as *ar = *op0 <op> *op1;
 
   ?(!code); - Execute code if ar is 0.
   ?(?code); - Execute code if ar is non-zero.
@@ -156,10 +156,10 @@ default function map size is 16KB
     !!bb    - use base bb as input base. Note: this only changes the multiplier to bb.
               Hex input will still be available. This does not effect
               operators. (eg, :11 wont work, you will still need to use :b)
-	          a-f retain their values of 10-15. Likewise, increasing the base
-	          does not expose more input characters. You will still be stuck
-	          with 0-F (0-15) as the units value for a given base.
-	          Setting !!00 will create the illusion of only having values 0-f.
+              a-f retain their values of 10-15. Likewise, increasing the base
+              does not expose more input characters. You will still be stuck
+              with 0-F (0-15) as the units value for a given base.
+              Setting !!00 will create the illusion of only having values 0-f.
               Setting !!10 is equivilant to 1 * input_base + 0, and thus has no effect.
 
      !(<N){code}   - For loop. This is the equivilent of doing something like:
@@ -178,6 +178,10 @@ default function map size is 16KB
             - loads the address space pointed by mp with pointers to the actual arguments.
             - increases mp
             - ar is set to argument count.
+
+    Q       - break from loop. The number of Q's determines how far out of the nest you want to break.
+            - For example, Q means break 1 nesting, QQ means break 2 nestings,
+              QQQ means break 3 nestings, and so on.
 
 ####################
 # Core Function list
