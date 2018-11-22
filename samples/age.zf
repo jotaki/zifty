@@ -4,38 +4,44 @@
 
 0:a ~~1
 _3 "How old are you? " _0 q:2 1:1 @
-?(? 
-  ,
-  q_:
+?(!
+  0 ~~1
+  , ^
+  0 ~~8
+  v q_:
   '\n' :; 
   ?(=
     qa:
     21 :;
     ?(<
+      0 ~~1
       _3 "Looks like you can't purchase alcohol in the states.\n" _0 q:2 1:1 @
-      0
+      0 ~~8
     )(
+      0 ~~1
       _3 "Yay, you're old enough to get alcohol. Let's go get some beer. ... no?\n" _0 q:2 1:1 @
       _3 "You're more of a wine drinker aren't you?\n" _0 q:2 1:1 @
-      0
+      0 ~~8
     );
   )(
-    ;: ^ '9' :;
+    ;: ^
+    '9' :;
     ?([
       '0' :;
       ?(]
-        0 ~~8
         - ^
 	qa:
 	10 :;
 	* ::
 	v :;
 	+ :a
-	0 ~~1
       )(
+        0 ~~1
         _3 "Expected number, got '" _0 q:2 1:1 @
 	v . ^
-	_3 "': ignoring\n" _0 q2: 1:1 @
+	_3 "': ignoring\n" _0 q:2 1:1 @
+	0 ~~8
+	1
       );
     )(
       _3 "Expected number, got '" _0 q:2 1:1 @

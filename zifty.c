@@ -943,16 +943,17 @@ long find_matching(struct machinestate_s *state, int dir, int skip, int needle)
 			}
 		}
 		else if(code[ip] == '#' && dir > 0) {
-			if((ip+2) < size && isdebughash(code,ip))
+			if((ip+2) < size && isdebughash(code,ip)) {
+				ip += dir;
 				continue;
-			else {
+			} else {
 				for(ip += dir; ip < size; ip += dir) {
 					if(code[ip] == '\n')
 						break;
 				}
 			}
 		}
-		/*else if(code[ip] == '\n' && dir < 0) {
+		else if(code[ip] == '\n' && dir < 0) {
 			for(tmp = ip+dir; tmp >= 0; tmp += dir) {
 				if(code[tmp] == '#') {
 					if(tmp+2 < size && isdebughash(code,tmp))
@@ -962,8 +963,10 @@ long find_matching(struct machinestate_s *state, int dir, int skip, int needle)
 						break;
 					}
 				}
+				else if(code[tmp] == '\n')
+					break;
 			}
-		}*/
+		}
 		else if(code[ip] == needle)
 			--count;
 		else if(code[ip] == skip)
