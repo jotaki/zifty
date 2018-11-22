@@ -930,7 +930,6 @@ inline int isdebughash(char *code, long ip)
 	return (code[ip+1] == '%' && strchr("agprvqsm0123456789ABCDEF", code[ip+2]));
 }
 
-
 long find_matching(struct machinestate_s *state, int dir, int skip, int needle)
 {
 	register long count = 1, ip, size, tmp;
@@ -1441,6 +1440,75 @@ void load_arguments(struct machinestate_s *state, int argc, char *argv[])
 
 }
 
+/*
+ * upgraded find_matching; TODO: change find_matching to use this function.
+ */
+long lookfor(struct machinestate_s *state, long start, int dir, int skip, int needle)
+{
+	register long ip, max, count;
+	register char *code = state->ms_code;
+
+	max = state->ms_code_size;
+	count = 1;
+	for(ip = start; (ip >= 0 && ip < max) && count > 0; ip += dir) {
+		if(code[ip] == '"' && needle != '"') {
+			for(ip += dir; ip >= 0 && ip < max; ip += dir) {
+				if(code[ip] == '"' && code[ip+dir] != '\\')
+					break;
+			}
+		}
+		else if(code[ip] == '\'' && needle != '\'') {
+			for(ip += dir; ip >= 0 && ip < max; ip += dir) {
+				if(code[ip] == '\'' && code[ip+dir] != '\\')
+					break;
+			}
+		}
+		else if(code[ip] == '`' && needle != '`') {
+			for(ip += dir; ip >= 0 && ip < max; ip += dir) {
+				if(code[ip] == '`' /* && code[ip+dir] != '\\' */)
+					break;
+			}
+		}
+		else if(code[ip] == '#' && dir > 0 && needle != '#') {
+			// check if debug statement.
+			if((ip+2) < max && isdebughash(code,ip)) {
+				ip += dir;
+				continue;
+			} else {
+				for(ip += dir; ip < max; ip += dir) {
+					if(code[ip] == '\n')
+						break;
+				}
+			}
+		}
+		else if(code[ip] == '\n' && dir < 0 && needle != '\n') {
+			register long potip;
+
+			for(potip = ip+dir; potip >= 0; potip += dir) {
+				if(code[potip] == '#') {
+					if(!((potip+2) < max && isdebughash(code,potip))) {
+						ip = potip;
+						break;
+					}
+				}
+				else if(code[potip] == '\n')
+					break;
+			}
+		}
+		else if(code[ip] == needle)
+			--count;
+		else if(code[ip] == skip)
+			++count;
+
+		ip += dir;
+	}
+
+	if(count > 0)
+		ip = -1;
+
+	return ip + -(dir);
+}
+
 int runvm(struct machinestate_s *state, int argc, char *argv[])
 {
 	register char *code;
@@ -1611,6 +1679,43 @@ int runvm(struct machinestate_s *state, int argc, char *argv[])
 						warnx("Unexpected character '%c'", safe_print(arg[1]));
 				}
 #undef cmphelper
+			}
+			break;
+
+			case 'Q':
+			{
+				register long brk = 1, out;
+
+				while(MSIP_PEEK(state,*ip+1) == 'Q') {
+					*ip += 1;
+					++brk;
+				}
+
+				out = *ip;
+				while(brk > 0) {
+					out = lookfor(state, out, 1, -1, ')');
+					if(out < 0) {
+						warnx("Could not find ')', is this a loop?");
+						break;
+					}
+
+					while(MSIP_PEEK(state, out) == '(') {
+						out = lookfor(state, out, 1, -1, ')');
+						if(out < 0) {
+							warnx("Could not find ')', is this a loop?");
+							break;
+						}
+					}
+
+					// sanity check.
+					if(out < 0)
+						break;
+
+					--brk;
+				}
+
+				if(brk == 0)
+					*ip = out;
 			}
 			break;
 
