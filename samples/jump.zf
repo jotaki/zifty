@@ -1,0 +1,17 @@
+#! /usr/bin/env zifty
+
+!!0a
+
+0
+?(?
+  "This should be triggered!\n" ~~.
+)(
+  J
+);
+
+1
+?(?
+  J
+)(
+  "This should be triggered also!\n" ~~.
+);
