@@ -1,0 +1,110 @@
+#! /usr/bin/env zifty
+
+!!0a
+
+`print` {
+  q1:
+  $$
+  q1:
+  ~~.
+}
+
+`ptr` {
+  ;{1}
+}
+
+`printptr` {
+  `ptr` @
+  :1 `print` @
+}
+
+`mknumber` {
+  0:a ~:1
+  1
+  ?(?
+    ;{1} ::
+    '9' :;
+    ?([
+      '0' :;
+      ?(]
+        ~:8
+        - ^
+	qa:
+	10 :;
+	* ::
+	v :;
+	+ :a
+	~:1
+      );
+    );
+    ;{{1}}
+  )?
+  ;a
+}
+
+S[arg0] 8 $>
+S[arg1] $<
+\/
+:; 1 ::
+?(=
+  "Missing arguments.\nUsage: " ~~.
+  _1 ;[arg0] _0 `printptr` @
+  " [byte] < <file>\n" ~~.
+  _: 1 _0 0 @
+)(
+  _1 ;[arg1] _0 `ptr` @ :1 `mknumber` @
+  ?(!
+    _1 ;[arg1] _0 `printptr` @ "is not a valid number. Try again.\n" ~~.
+    _: 1 _0 0 @
+  )(
+    :[location]
+    0 :[char] :[byte]
+    1 :[line]
+
+    ?(?
+      ~:1 , ~:8 :a
+
+      ;[char] ::
+      1 :;
+      + :[char]
+
+      ;[byte] ::
+      + :[byte]
+
+      ?(?
+        ;a ::
+        '\n' :;
+        ?(=
+          ;[location] ::
+	        ;[byte] :;
+	        ?(/
+            ;[line] ::
+            1 :;
+            + :[line]
+
+            ;[char] :[old char]
+            0 :[char]
+          )(
+            ;[line] ::
+            1 :;
+            - :[line]
+            ;[old char] ::
+            1 :;
+            + :[char]
+          );
+        );
+
+        ;[byte] ::
+        ;[location] :;
+        ?(]
+          "Found byte " ~~. ;[byte] ~. " to be line " ~~.
+          ;[line] ~. " character " ~~. ;[char] ~. ". ('" ~~.
+          ;a :: 31 :; ?(> ;a . )( '.' . );
+          "', 0x" ~~. !!16 ;a ~. !!0a ")\n" ~~.
+          0 :: @
+        );
+        ;a
+      );
+    )?
+  );
+);
