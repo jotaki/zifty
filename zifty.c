@@ -522,7 +522,7 @@ void i_cpy2ar(struct machinestate_s *state, long rN)
 	} else if(rN == ':' || rN == ';') {
 		*(MSRG_GETAR(state)) = *(MSRG_GETOP(state,(rN%2)));
 	} else if(rN == '$' || rN == 'S') {
-		*(MSRG_GETAR(state)) = state->ms_memory[state->ms_mp];
+		memcpy(MSRG_GETAR(state), state->ms_memory+state->ms_mp, MSRG_GETOPSZ(state,0));
 
 		if(rN == '$') {
 			tmp = state->ms_mp;
@@ -698,16 +698,19 @@ void dumpvm(struct machinestate_s *state, long mode)
 			k = *(MSRG_GETOP(state,1));
 
 			if(k < j) {
-				warnx("op1 < op0, can't do this.");
-				break;
+				warnx("op1 < op0, can't do this, assuming op1 is length.");
+				k += j;
 			}
-			else if(j < 0 || j >= state->ms_memory_size) {
+
+			if(j < 0 || j >= state->ms_memory_size) {
 				warnx("op0 out of range. (%ld)", j);
 				break;
 			}
 			else if(k < 0 || k >= state->ms_memory_size) {
-				warnx("op1 out of range. (%ld)", k);
-				break;
+				warnx("op1 out of range. (%ld) (max: %ld)", k, state->ms_memory_size);
+				warnx("Adjusting, ***WARNING*** This may not be what you want.");
+				if(k < 0) k = 0;
+				else if(k >= state->ms_memory_size) k = state->ms_memory_size;
 			}
 
 			// layout yanked from hexdump -C
@@ -715,10 +718,10 @@ void dumpvm(struct machinestate_s *state, long mode)
 			if(tmp > 0) {
 				while(tmp > 0) {
 					printf("%08lx ", j);
-					for(l = j+8; j < l; ++j) printf(" %02x", state->ms_memory[j]);
+					for(l = j+8; j < l; ++j) printf(" %02x", state->ms_memory[j] & 0xff);
 
 					printf(" ");
-					for(l = j+8; j < l; ++j) printf(" %02x", state->ms_memory[j]);
+					for(l = j+8; j < l; ++j) printf(" %02x", state->ms_memory[j] & 0xff);
 
 					printf("  |");
 					for(j = l-16; j < l; ++j)
@@ -734,7 +737,7 @@ void dumpvm(struct machinestate_s *state, long mode)
 				printf("%08lx ", j);
 
 				if(tmp/8 > 0) {
-					for(l = j+8; j < l; ++j) printf(" %02x", state->ms_memory[j]);
+					for(l = j+8; j < l; ++j) printf(" %02x", state->ms_memory[j] & 0xff);
 					printf(" ");
 				}
 
@@ -1400,7 +1403,45 @@ struct function_map_s *find_function(struct machinestate_s *state, long fn)
 	return NULL;
 }
 
-int runvm(struct machinestate_s *state)
+// expensive
+void load_arguments(struct machinestate_s *state, int argc, char *argv[])
+{
+	register long i, length = 0;
+	register char *buf, *ptr;
+	long addr;
+
+	for(i=0; i < argc; ++i) {
+		length += strlen(argv[i])+1;
+	}
+
+	if((length+(signed)sizeof(long)*i) > state->ms_memory_size) {
+		warnx("Can't load arguments. Not enough memory available.");
+		return;
+	}
+	else if(state->ms_mp+(signed)sizeof(long)*i > state->ms_memory_size) {
+		warnx("I can't place pointers there.");
+		return;
+	}
+
+	addr = state->ms_memory_size - length;
+	buf = state->ms_memory + addr;
+	for(i = 0; i < argc; ++i) {
+		for(ptr = argv[i]; *ptr; ++ptr) {
+			*buf++ = *ptr;
+		}
+		*buf++ = '\0';
+
+		memcpy(state->ms_memory+state->ms_mp, &addr, sizeof(addr));
+		state->ms_mp += sizeof(addr);
+
+		addr += (long) (unsigned long) ((ptr+1) - argv[i]);
+	}
+
+	*(MSRG_GETAR(state)) = argc;
+
+}
+
+int runvm(struct machinestate_s *state, int argc, char *argv[])
 {
 	register char *code;
 	register long *ip, hex=0, max, line = 1, column = 0;
@@ -1433,6 +1474,14 @@ int runvm(struct machinestate_s *state)
 		switch(code[*ip]) {
 			case '\n':
 				LINE_CHANGE(line, column);
+				break;
+
+			case '\\':
+				if(MSIP_PEEK(state,*ip+1) == '/') {
+					*ip += 1;
+					load_arguments(state, argc, argv);
+					break;
+				}
 				break;
 
 			case ':':
@@ -1751,6 +1800,21 @@ int runvm(struct machinestate_s *state)
 							else *ar = 0;
 						}
 						break;
+
+					case ':':
+					case ';':
+						if(!vmop(state,1,&arg[1])) {
+							warnx("Expected parameter to '~%c' operator.", (int) arg[0]);
+							break;
+						}
+
+						if(!strchr("1248", arg[1])) {
+							warnx("Invalid operator size specified in '~%c' operator.", (int) arg[0]);
+							warnx("Expected (1, 2, 4, 8) but got '%c' instead.", safe_print(arg[1]));
+						}
+
+						state->ms_reg.r_opsz[arg[0]%2] = hex2int(arg[1]);
+						break;
 				}
 				break;
 
@@ -1846,7 +1910,7 @@ int runvm(struct machinestate_s *state)
 
 			case ',':
 				*ar = 0;
-				if(read(STDIN_FILENO, ar, state->ms_reg.r_opsz[0]) <= 0)
+				if(read(STDIN_FILENO, ar, state->ms_reg.r_opsz[0]) < 0)
 					warn("read(2)");
 				break;
 
@@ -2160,7 +2224,7 @@ int main(int argc, char *argv[])
 		err(errno,"mmap(2)");
 	}
 
-	rc = runvm(&state);
+	rc = runvm(&state, argc-1, argv+1);
 
 	trace_stack(NULL,0,TS_CLEANUP);
 	munmap(state.ms_code, state.ms_code_size);
