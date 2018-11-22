@@ -95,6 +95,8 @@ default function map size is 16KB
               any other input base will print the results as decimal.)
     ~,      - Read value as integer into *ar. (Note: Input base 16 will read hexadecimal values. Any other
               base will result in reading base 10 values. Operator size is ignored in all ~~[,.] and ~[,.] operators.
+    ~:N     - Set op0 size to N (N=1,2,4,8)
+    ~;N     - Set op1 size to N (N=1,2,4,8)
     ~~~     - Binary NOT of op0 OR op1. (~(op0|op1))
 
     +       - Add op0 and op1 registers, storing output in ar.
@@ -149,7 +151,7 @@ default function map size is 16KB
 
   `string`  - write value 'string' into ar.
             - Note 1: this operation ignores operation sizes.
-	    - Note 2: the string is limited to sizeof(long) bytes. (8 on x86_64 platforms.)
+            - Note 2: the string is limited to sizeof(long) bytes. (8 on x86_64 platforms.)
 
     !!bb    - use base bb as input base. Note: this only changes the multiplier to bb.
               Hex input will still be available. This does not effect
@@ -158,6 +160,7 @@ default function map size is 16KB
 	          does not expose more input characters. You will still be stuck
 	          with 0-F (0-15) as the units value for a given base.
 	          Setting !!00 will create the illusion of only having values 0-f.
+              Setting !!10 is equivilant to 1 * input_base + 0, and thus has no effect.
 
      !(<N){code}   - For loop. This is the equivilent of doing something like:
                      for(*ar = *op0; *ar < N; *ar += *op1) { /* code */ }
@@ -169,6 +172,12 @@ default function map size is 16KB
     !(==N){code}   - For loop. Like above, but use == comparison. (step is -= *op1)
   !(<op>;R){code}  - For loop. Use current value of register R
  !(<op>;(R)){code} - For loop. Use value of register R. Keeping up with register R even if it changes.
+
+    \/      - load command line arguments into memory.
+            - loads arguments into the end of memory.
+            - loads the address space pointed by mp with pointers to the actual arguments.
+            - increases mp
+            - ar is set to argument count.
 
 ####################
 # Core Function list
