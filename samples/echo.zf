@@ -1,0 +1,5 @@
+#! /usr/bin/env zifty
+
+"Simple echo v0.0\nSend EOF (^D) to quit.\n" ~~.
+0 ~~1
+?(! , ?(? . ); )?
