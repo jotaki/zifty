@@ -183,6 +183,9 @@ default function map size is 16KB
             - For example, Q means break 1 nesting, QQ means break 2 nestings,
               QQQ means break 3 nestings, and so on.
 
+    J       - jump to if-block if in else block.
+            - jump to else-block if in if block.
+
 ####################
 # Core Function list
 
