@@ -1,0 +1,22 @@
+#! /usr/bin/env zifty
+
+!!0a
+
+"How old are you? > " ~~.
+
+~, :a
+"You're " ~~.
+;a ~.
+" year" ~~.
+
+qa: 1:; ?(> 's' . );
+
+" old?\n" ~~.
+
+qa:
+21 :;
+?(]
+  "You're old enough to party, let's get some drinks!\n" ~~.
+)(
+  "Too young to party, lets go to a movie instead.\n" ~~.
+);

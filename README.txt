@@ -89,6 +89,12 @@ default function map size is 16KB
     ~AB     - use registers A, and B for operator register 0 and 1.
     ~~N     - N=1,2,4,8; set operand size for opX, X found in ar. (X=0,1)
     ~~_     - set registers op0, and op1 to register values found in op0, and op1 respectively.
+    ~~.     - Print string pointed to by mem[*op0] of length *ar.
+    ~~,     - Read string pointed to by mem[*op0] of length *ar.
+    ~.      - Write value of *ar as integer. (Note: Input base 16 will print the results as hexadecimal,
+              any other input base will print the results as decimal.)
+    ~,      - Read value as integer into *ar. (Note: Input base 16 will read hexadecimal values. Any other
+              base will result in reading base 10 values. Operator size is ignored in all ~~[,.] and ~[,.] operators.
     ~~~     - Binary NOT of op0 OR op1. (~(op0|op1))
 
     +       - Add op0 and op1 registers, storing output in ar.

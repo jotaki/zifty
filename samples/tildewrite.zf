@@ -1,0 +1,3 @@
+#! /usr/bin/env zifty
+
+"This is a test! This is only a test!\n" ~~.

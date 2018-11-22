@@ -1076,11 +1076,6 @@ void dumpro(struct rip_object_s *ro)
 	}
 	printf("       rip: 0x%04lx\n", ro->ro_rip);
 	printf("     flags: %s (%06lx)\n", to_binary(ro->ro_flags, 24, NULL), ro->ro_flags);
-      /*printf("        ar: %ld\n", (ro->ro_flags >> 4) & 0xf);
-	printf("       op1: %ld\n", (ro->ro_flags >> 8) & 0xf);
-	printf("     op1sz: %ld\n", (ro->ro_flags >>12) & 0xf);
-	printf("       op0: %ld\n", (ro->ro_flags >>16) & 0xf);
-	printf("     op0sz: %ld\n", (ro->ro_flags >>20) & 0xf);*/
 	printf("     op0sz: %ld\n", ROFL_GETOPSZ(ro,0));
 	printf("       op0: %ld\n", ROFL_GETOP(ro,0));
 	printf("     op1sz: %ld\n", ROFL_GETOPSZ(ro,1));
@@ -1654,37 +1649,105 @@ int runvm(struct machinestate_s *state)
 				break;
 
 			case '~':
-				if(!vmop(state, 2, &arg[0], &arg[1])) {
-					err_need_args('~', *ip);
+				if(!vmop(state, 1, &arg[0])) {
+					warnx("Expected argument to '~' operator.");
 					break;
 				}
 
-				if(isxdigit(arg[0]) && isxdigit(arg[1])) {
-					tmp = hex2int(arg[0]);
-					state->ms_reg.r_[0] = &(state->ms_reg.r_reg[tmp]);
+				if(isxdigit(arg[0])) {
+					if(!vmop(state, 1, &arg[1])) {
+						warnx("Expected argument to '~' operator.");
+						break;
+					}
 
-					tmp = hex2int(arg[1]);
-					state->ms_reg.r_[1] = &(state->ms_reg.r_reg[tmp]);
-				} else if(arg[0] == '~') {
+					if(!isxdigit(arg[1])) {
+						warnx("Expected hexadecimal input to '~' operator.");
+						break;
+					}
+
+					state->ms_reg.r_[0] = &(state->ms_reg.r_reg[hex2int(arg[0])]);
+					state->ms_reg.r_[1] = &(state->ms_reg.r_reg[hex2int(arg[1])]);
+
+				}
+				else if(arg[0] == '~') {
+					if(!vmop(state, 1, &arg[1])) {
+						warnx("Expected argument to '~~' operator.");
+						break;
+					}
+
 					if(strchr("1248", arg[1])) {
 						state->ms_reg.r_opsz[*ar%2] = hex2int(arg[1]);
-					} else if(arg[1] == '_') {
-						arg[2] = *(MSRG_GETOP(state,0));
-						arg[3] = *(MSRG_GETOP(state,1));
-
-						if(arg[2] > 15) warnx("Invalid op setting in ~~_ for op0");
-						else MSRG_GETOP(state,0) = &(MSRG_GET(state,arg[2]));
-
-						if(arg[3] > 15) warnx("Invalid op setting in ~~_ for op1");
-						else MSRG_GETOP(state,1) = &(MSRG_GET(state,arg[3]));
-					} else if(arg[1] == '~') {
-						*ar = ophlpr(state, arg[1]);
-					} else {
-						err_unexpected_character('~', arg[1], *ip);
+						break;
 					}
-				} else {
-					err_unexpected_character('~', arg[0], *ip);
-					err_unexpected_character('~', arg[1], *ip);
+
+					switch(arg[1]) {
+						case '_':
+							arg[2] = *(MSRG_GETOP(state,0));
+							arg[3] = *(MSRG_GETOP(state,1));
+
+							if(arg[2] > 15) warnx("Invalid op setting in ~~_ for op0");
+							else MSRG_GETOP(state,0) = &(MSRG_GET(state,arg[2]));
+
+							if(arg[3] > 15) warnx("Invalid op setting in ~~_ for op1");
+							else MSRG_GETOP(state,1) = &(MSRG_GET(state,arg[3]));
+							break;
+
+						case '~':
+							*ar = ophlpr(state, arg[1]);
+							break;
+
+						case '.':
+						{
+							register long *op0;
+
+							op0 = MSRG_GETOP(state, 0);
+							if(*op0 < 0 || (*op0 + *ar) >= state->ms_memory_size) {
+								warnx("Memory address out of range in ~~.");
+								break;
+							}
+
+							if(write(STDOUT_FILENO, &state->ms_memory[*op0], *ar) < 0)
+								warn("write(2) failed");
+						}
+						break;
+
+						case ',':
+						{
+							register long *op0;
+
+							op0 = MSRG_GETOP(state, 0);
+							if(*op0 < 0 || (*op0 + *ar) >= state->ms_memory_size) {
+								warnx("Memory address out of range for ~~,");
+								break;
+							}
+
+							if(read(STDIN_FILENO, &state->ms_memory[*op0], *ar) < 0)
+								warn("read(2) failed");
+						}
+						break;
+
+						default:
+							warnx("Unknown finishing operator '%c' for '~~' operator.", safe_print(arg[1]));
+					}
+					break;
+				}
+
+				switch(arg[0]) {
+					case '.':
+						if(input_base == 16) printf("%lx", *ar);
+						else printf("%ld", *ar);
+						fflush(stdout);
+						break;
+
+					case ',':
+						if(input_base == 16) {
+							if(scanf("%lx", &arg[1]) == 1) *ar = arg[1];
+							else *ar = 0;
+						} else {
+							if(scanf("%ld", &arg[1]) == 1) *ar = arg[1];
+							else *ar = 0;
+						}
+						break;
 				}
 				break;
 

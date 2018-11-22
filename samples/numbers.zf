@@ -1,0 +1,5 @@
+#! /usr/bin/env zifty
+
+!!0a
+"Enter a number: " ~~. ~, ^
+"You entered the number: " ~~. v ~. '\n' .
