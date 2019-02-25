@@ -1,0 +1,13 @@
+The reason the memory on this is a bit funky, is because I just brain dumped
+from the idea of Brainfuck, where it had a limited amount of memory. Ideally
+one could remove these dumb constraints, and use a better mapping model.
+
+The other thing about this is, with some modification, it could convert to
+x86_64 architecture really nicely. You could convert the instructions to the
+necessary opcodes and run a jmp to an mmap()'d region, or you could point a
+function to an mmap()'d region and put the whole thing in a function. The jmp
+would obviously allow it to be outside of the "function setup", but it would
+have the same boundries as the calling function. Hopefully that made sense,
+I'm kind of rambling now, it's just some ideas I had for this language.
+
+"Balance in all things!\n" ~~.
