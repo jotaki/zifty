@@ -1,9 +1,0 @@
-This code is mostly finished really (for a foundation)
-I added an interface to create somewhat of a standard library, but that is not done.
-(code is never finished, it can always be updated and made more efficient.)
-It's complete at the hardware level though (as far as I know.)
-
-I believe there is one memory leak in this code, somewhere in the stack tracing system,
-but I haven't fixed it.
-
-I wrote this is a night or so (it was just a brain dump.)
