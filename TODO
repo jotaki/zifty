@@ -1,4 +1,1 @@
-add Linux interrupt 80 as a core function list.
-
-Idea:
-updated ELF format to simulate register pointers
+add Linux interrupt 80 / syscalls as a core function list.
